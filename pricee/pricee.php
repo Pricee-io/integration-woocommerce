@@ -408,7 +408,7 @@ function pricee_log($message, $level = 'INFO')
     }
 
     $upload_dir = wp_upload_dir();
-    $log_dir = $upload_dir['basedir'].'/my-plugin/logs/';
+    $log_dir = $upload_dir['basedir'].'/pricee/logs/';
 
     if (!file_exists($log_dir)) {
         wp_mkdir_p($log_dir);
