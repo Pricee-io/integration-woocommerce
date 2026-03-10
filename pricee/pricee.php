@@ -326,6 +326,13 @@ function pricee_webhook_handler(WP_REST_Request $request)
 {
     $body = $request->get_body();
     $signature = $request->get_header('x-signature');
+    if (empty($body) || empty($signature)) {
+        return new WP_REST_Response([
+            'success' => false,
+            'message' => 'Missing informations for webhook',
+        ], 400);
+    }
+
     $enabled = get_option('pricee_webhook_enabled', '');
     $secret = get_option('pricee_webhook_secret', '');
 
@@ -346,7 +353,6 @@ function pricee_webhook_handler(WP_REST_Request $request)
     }
 
     $data = json_decode($body, true);
-
     foreach ($data as $productData) {
         if (empty($productData['url']) || empty($productData['bestPriceAmount'])) {
             continue;
@@ -368,16 +374,51 @@ function pricee_webhook_handler(WP_REST_Request $request)
             continue;
         }
 
-        // Update price
-        $price = (string) $productData['bestPriceAmount'];
-        $product->set_regular_price($price);
-        $product->save();
+        try {
+            // Update price
+            $current_price = $product->get_regular_price();
+            $new_price = (string) $productData['bestPriceAmount'];
+            $product->set_regular_price($new_price);
+            $product->save();
+
+            pricee_log(
+                "Price updated for product ID {$product->get_id()} | Old: {$current_price} -> New: {$new_price}",
+                'INFO'
+            );
+        } catch (Exception $e) {
+            pricee_log(
+                "Price update failed for product ID {$product->get_id()} : ".$e->getMessage(),
+                'ERROR'
+            );
+        }
     }
 
     return new WP_REST_Response([
         'success' => true,
         'message' => 'Webhook received and validated',
     ], 200);
+}
+
+function pricee_log($message, $level = 'INFO')
+{
+    if (is_array($message) || is_object($message)) {
+        $message = print_r($message, true);
+    }
+
+    $upload_dir = wp_upload_dir();
+    $log_dir = $upload_dir['basedir'].'/my-plugin/logs/';
+
+    if (!file_exists($log_dir)) {
+        wp_mkdir_p($log_dir);
+    }
+
+    $log_file = $log_dir.'plugin.log';
+
+    $time = current_time('Y-m-d H:i:s');
+
+    $line = "[{$time}] [{$level}] {$message}".PHP_EOL;
+
+    file_put_contents($log_file, $line, FILE_APPEND);
 }
 
 // Add settings link in Plugins page
