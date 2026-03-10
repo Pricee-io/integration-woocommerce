@@ -303,6 +303,7 @@ add_action('wp_ajax_pricee_sync_products', function () {
 });
 
 // Register Pricee webhook endpoint
+// @phpstan-ignore-next-line
 add_action('rest_api_init', function () {
     register_rest_route('pricee/v1', '/webhook', [
         'methods' => 'POST',
@@ -357,7 +358,8 @@ function pricee_webhook_handler(WP_REST_Request $request)
         }
 
         // Update price
-        $product->set_regular_price($productData['bestPriceAmount']);
+        $price = (string) $productData['bestPriceAmount'];
+        $product->set_regular_price($price);
         $product->save();
     }
 
