@@ -18,7 +18,7 @@ if (file_exists(__DIR__.'/vendor/autoload.php')) {
 
 define('PRICEE_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('PRICEE_PLUGIN_URL', plugin_dir_url(__FILE__));
-define('PRICEE_VERSION', '1.1.0');
+define('PRICEE_VERSION', '1.2.0');
 
 require_once PRICEE_PLUGIN_DIR.'includes/class-pricee-api-service.php';
 
