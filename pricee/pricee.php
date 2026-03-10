@@ -3,7 +3,7 @@
 /*
  * Plugin Name: Pricee
  * Description: PrestaShop integration with WooCommerce
- * Version: 1.0.0
+ * Version: 1.0.1
  * Author: Pricee.io
  * Text Domain: pricee
  */
