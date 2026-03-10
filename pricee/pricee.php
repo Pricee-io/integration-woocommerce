@@ -308,7 +308,7 @@ add_action('rest_api_init', function () {
     register_rest_route('pricee/v1', '/webhook', [
         'methods' => 'POST',
         'callback' => 'pricee_webhook_handler',
-        'permission_callback' => '__return_true', // Allow external calls; can be secured later
+        'permission_callback' => '__return_true', // Allow external calls; secured by hmac verification
     ]);
 });
 
@@ -322,7 +322,7 @@ function pricee_webhook_handler(WP_REST_Request $request)
         return new WP_REST_Response([
             'success' => false,
             'message' => 'Webhook secret not configured',
-        ], 500);
+        ], 401);
     }
 
     $expected_signature = hash_hmac('sha256', $body, $secret);
