@@ -8,6 +8,15 @@
 - Sync selected product categories from WooCommerce to Pricee.io
 - Automatically update product prices when competitors change theirs, if the new price is within your set range.
 
+## Prerequisites
+
+- PHP 8.2 or higher
+
+## Installation
+
+1. Download the plugin named "pricee.zip" from the last [GitHub release](https://github.com/Pricee-io/integration-woocommerce/releases).
+2. Install the plugin from the WordPress backoffice.
+
 ## Contribute
 
 We welcome contributions from the community. If you have any suggestions or improvements, please feel free to open an issue or submit a pull request. 

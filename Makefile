@@ -26,3 +26,8 @@ analyze:
 
 analyze_ci:
 	docker compose run --rm --user $(id -u):$(id -g) -e _PS_ROOT_DIR_=/var/www/html dev php vendor/bin/phpstan analyse --error-format github --memory-limit=1G
+
+package:
+	docker compose run --rm --user $(id -u):$(id -g) dev bash -c "cd /app/pricee"
+	rm -f pricee.zip
+	zip -r pricee.zip pricee
