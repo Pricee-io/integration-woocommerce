@@ -72,6 +72,8 @@ class Pricee_Plugin
     {
         $webhook_enabled = get_option('pricee_webhook_enabled', 'no');
         $webhook_secret = get_option('pricee_webhook_secret', '');
+        $site_url = get_site_url();
+        $webhook_url = esc_url($site_url.'/wp-json/pricee/v1/webhook');
         ?>
         <div class="wrap">
             <h1><?php esc_html_e('Pricee.io - Configuration', 'pricee'); ?></h1>
@@ -80,6 +82,7 @@ class Pricee_Plugin
                 settings_fields('pricee_settings_group');
         do_settings_sections('pricee_settings_group');
         ?>
+                <h2><?php esc_html_e('Synchronisation', 'pricee'); ?></h2>
                 <table class="form-table">
                     <tr>
                         <th scope="row"><?php _e('ID Client', 'pricee'); ?></th>
@@ -93,11 +96,21 @@ class Pricee_Plugin
                             <input type="password" name="pricee_api_key" value="<?php echo esc_attr(get_option('pricee_api_key')); ?>" />
                         </td>
                     </tr>
+                </table>
+                <h2><?php esc_html_e('Mise à jour automatique des prix', 'pricee'); ?></h2>
+                <table class="form-table">
                     <tr>
                         <th scope="row"><?php _e('Activer la synchronisation webhook', 'pricee'); ?></th>
                         <td>
                             <input type="checkbox" name="pricee_webhook_enabled" value="yes" <?php checked($webhook_enabled, 'yes'); ?> />
                             <p class="description"><?php _e('Active la mise à jour automatique des prix de vos produits depuis Pricee.', 'pricee'); ?></p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><?php _e('URL du Webhook', 'pricee'); ?></th>
+                        <td>
+                            <input type="text" readonly value="<?php echo $webhook_url; ?>" style="width:100%; max-width:500px;" onclick="this.select();" />
+                            <p class="description"><?php _e('Copiez cette URL pour configurer le webhook dans Pricee.io.', 'pricee'); ?></p>
                         </td>
                     </tr>
                     <tr>
@@ -288,6 +301,71 @@ add_action('wp_ajax_pricee_sync_products', function () {
         wp_send_json_error(['message' => $e->getMessage()]);
     }
 });
+
+// Register Pricee webhook endpoint
+add_action('rest_api_init', function () {
+    register_rest_route('pricee/v1', '/webhook', [
+        'methods' => 'POST',
+        'callback' => 'pricee_webhook_handler',
+        'permission_callback' => '__return_true', // Allow external calls; can be secured later
+    ]);
+});
+
+function pricee_webhook_handler(WP_REST_Request $request)
+{
+    $body = $request->get_body();
+    $signature = $request->get_header('x-signature');
+    $secret = get_option('pricee_webhook_secret', '');
+
+    if (empty($secret)) {
+        return new WP_REST_Response([
+            'success' => false,
+            'message' => 'Webhook secret not configured',
+        ], 500);
+    }
+
+    $expected_signature = hash_hmac('sha256', $body, $secret);
+
+    if (!hash_equals($expected_signature, $signature)) {
+        return new WP_REST_Response([
+            'success' => false,
+            'message' => 'Invalid signature',
+        ], 401);
+    }
+
+    $data = json_decode($body, true);
+
+    foreach ($data as $productData) {
+        if (empty($productData['url']) || empty($productData['bestPriceAmount'])) {
+            continue;
+        }
+
+        // Find product by URL
+        $product_id = url_to_postid($productData['url']);
+        if (!$product_id) {
+            continue; // URL does not match any product
+        }
+
+        $product = wc_get_product($product_id);
+        if (!$product) {
+            continue; // Product not found
+        }
+
+        // Only update simple products for now (no variants)
+        if ('simple' !== $product->get_type()) {
+            continue;
+        }
+
+        // Update price
+        $product->set_regular_price($productData['bestPriceAmount']);
+        $product->save();
+    }
+
+    return new WP_REST_Response([
+        'success' => true,
+        'message' => 'Webhook received and validated',
+    ], 200);
+}
 
 // Add settings link in Plugins page
 // @phpstan-ignore-next-line
