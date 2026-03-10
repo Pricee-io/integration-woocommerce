@@ -32,13 +32,22 @@ class Pricee_Plugin
     public function add_admin_menu()
     {
         add_menu_page(
-            __('Configuration', 'pricee'),
+            __('Pricee.io', 'pricee'),
             'Pricee.io',
             'manage_options',
             'pricee-settings',
             [$this, 'settings_page'],
             'dashicons-cart',
             56
+        );
+
+        add_submenu_page(
+            'pricee-settings',
+            __('Configuration', 'pricee'),
+            __('Configuration', 'pricee'),
+            'manage_options',
+            'pricee-settings',
+            [$this, 'settings_page']
         );
 
         add_submenu_page(
