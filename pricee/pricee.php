@@ -316,12 +316,13 @@ function pricee_webhook_handler(WP_REST_Request $request)
 {
     $body = $request->get_body();
     $signature = $request->get_header('x-signature');
+    $enabled = get_option('pricee_webhook_enabled', '');
     $secret = get_option('pricee_webhook_secret', '');
 
-    if (empty($secret)) {
+    if (!$enabled || empty($secret)) {
         return new WP_REST_Response([
             'success' => false,
-            'message' => 'Webhook secret not configured',
+            'message' => 'Webhook not configured',
         ], 401);
     }
 
