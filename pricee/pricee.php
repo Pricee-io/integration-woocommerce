@@ -150,9 +150,9 @@ function pricee_sync_page_callback()
                 <div class="form-check">
                     <input class="form-check-input" type="checkbox"
                         name="categories[]"
-                        value="<?php echo esc_attr($category->term_id); ?>"
-                        id="category-<?php echo esc_attr($category->term_id); ?>">
-                    <label class="form-check-label" for="category-<?php echo esc_attr($category->term_id); ?>">
+                        value="<?php echo esc_attr((string) $category->term_id); ?>"
+                        id="category-<?php echo esc_attr((string) $category->term_id); ?>">
+                    <label class="form-check-label" for="category-<?php echo esc_attr((string) $category->term_id); ?>">
                         <?php echo esc_html($category->name); ?> (<?php echo count($product_count); ?>)
                     </label>
                 </div>
@@ -290,6 +290,7 @@ add_action('wp_ajax_pricee_sync_products', function () {
 });
 
 // Add settings link in Plugins page
+// @phpstan-ignore-next-line
 add_filter('plugin_action_links_'.plugin_basename(__FILE__), function ($links) {
     $settings_link = '<a href="'.admin_url('admin.php?page=pricee-settings').'">'.__('Settings').'</a>';
     array_unshift($links, $settings_link);

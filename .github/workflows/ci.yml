@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  ci:
+    name: WooCommerce Module CI
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Start services
+        run: make start
+
+      - name: Run lint check
+        run: make lint_ci
+
+      - name: Run static analysis
+        run: make analyze_ci
+
+      - name: Stop services
+        run: make stop

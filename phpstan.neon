@@ -1,4 +1,9 @@
+includes:
+  - vendor/szepeviktor/phpstan-wordpress/extension.neon
+
 parameters:
+  bootstrapFiles:
+    - vendor/php-stubs/woocommerce-stubs/woocommerce-stubs.php
   paths:
     - ./pricee
   excludePaths:
