@@ -1,0 +1,28 @@
+start:
+	docker compose build --no-cache dev
+	docker compose up -d --remove-orphans
+	docker compose run --rm --user $(id -u):$(id -g) dev composer install --no-interaction
+
+stop:
+	docker compose down
+
+clean:
+	docker compose down -v --remove-orphans
+
+logs:
+	docker compose logs -f
+
+dev:
+	docker compose run --rm --user $(id -u):$(id -g) dev bash
+
+lint:
+	docker compose run --rm --user $(id -u):$(id -g) dev php vendor/bin/php-cs-fixer fix
+
+lint_ci:
+	docker compose run --rm --user $(id -u):$(id -g) dev php vendor/bin/php-cs-fixer fix --dry-run --diff
+
+analyze:
+	docker compose run --rm --user $(id -u):$(id -g) -e _PS_ROOT_DIR_=/var/www/html dev php vendor/bin/phpstan analyse --memory-limit=1G
+
+analyze_ci:
+	docker compose run --rm --user $(id -u):$(id -g) -e _PS_ROOT_DIR_=/var/www/html dev php vendor/bin/phpstan analyse --error-format github --memory-limit=1G

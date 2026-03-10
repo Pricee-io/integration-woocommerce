@@ -1,0 +1,80 @@
+services:
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: wordpress_dev
+    working_dir: /app
+    volumes:
+      - ./:/app
+      - wordpress_data:/var/www/html
+    tty: true
+  db:
+    image: mariadb:12
+    container_name: woocommerce_db
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: wordpress
+      MYSQL_USER: wordpress
+      MYSQL_PASSWORD: wordpress
+    volumes:
+      - db_data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    networks:
+      - woocommerce_network
+
+  wordpress:
+    image: wordpress:latest
+    container_name: woocommerce_wp
+    depends_on:
+      - db
+    environment:
+      WORDPRESS_DB_HOST: db:3306
+      WORDPRESS_DB_NAME: wordpress
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: wordpress
+      WORDPRESS_DEBUG: 1
+      WORDPRESS_DEBUG_LOG: /var/www/html/wp-content/debug.log
+    ports:
+      - "8081:80"
+    volumes:
+      - wordpress_data:/var/www/html
+      - ./pricee:/var/www/html/wp-content/plugins/pricee
+    networks:
+      - woocommerce_network
+    restart: unless-stopped
+
+  wp-cli:
+    image: wordpress:cli
+    container_name: woocommerce_wp_cli
+    depends_on:
+      - db
+      - wordpress
+    user: "33:33"
+    volumes:
+      - wordpress_data:/var/www/html
+      - ./pricee:/var/www/html/wp-content/plugins/pricee
+    environment:
+      WORDPRESS_DB_HOST: db:3306
+      WORDPRESS_DB_NAME: wordpress
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: wordpress
+    networks:
+      - woocommerce_network
+    command: >
+      sh -c "sleep 30 &&
+      wp core install --url='http://localhost:8081' --title='WooCommerce Store' --admin_user='admin' --admin_password='password' --admin_email='admin@example.com' --allow-root &&
+      wp theme install twentytwentythree --activate --allow-root &&
+      wp plugin install woocommerce --activate --allow-root &&
+      wp plugin activate pricee --allow-root &&
+      wp option update siteurl 'http://localhost:8081' --allow-root &&
+      wp option update home 'http://localhost:8081' --allow-root"
+
+volumes:
+  db_data:
+  wordpress_data:
+
+networks:
+  woocommerce_network:
+    driver: bridge

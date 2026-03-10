@@ -1,0 +1,8 @@
+parameters:
+  paths:
+    - ./pricee
+  excludePaths:
+    - ./pricee/vendor (?)
+
+  reportUnmatchedIgnoredErrors: false
+  level: 5
