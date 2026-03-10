@@ -385,12 +385,14 @@ function pricee_webhook_handler(WP_REST_Request $request)
 
             pricee_log(
                 "Price updated for product ID {$product->get_id()} | Old: {$current_price} -> New: {$new_price}",
-                'INFO'
+                'INFO',
+                'webhook'
             );
         } catch (Exception $e) {
             pricee_log(
                 "Price update failed for product ID {$product->get_id()} : ".$e->getMessage(),
-                'ERROR'
+                'ERROR',
+                'webhook'
             );
         }
     }
@@ -401,7 +403,7 @@ function pricee_webhook_handler(WP_REST_Request $request)
     ], 200);
 }
 
-function pricee_log($message, $level = 'INFO')
+function pricee_log($message, $level = 'INFO', $file = 'main')
 {
     if (is_array($message) || is_object($message)) {
         $message = print_r($message, true);
@@ -414,7 +416,7 @@ function pricee_log($message, $level = 'INFO')
         wp_mkdir_p($log_dir);
     }
 
-    $log_file = $log_dir.'plugin.log';
+    $log_file = $log_dir.$file.'.log';
 
     $time = current_time('Y-m-d H:i:s');
 
