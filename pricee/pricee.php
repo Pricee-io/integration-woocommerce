@@ -4,8 +4,10 @@
  * Plugin Name: Pricee
  * Description: PrestaShop integration with WooCommerce
  * Version: 1.0.2
+ * Requires PHP: 7.4
  * Author: Pricee.io
  * Text Domain: pricee
+ * Requires Plugins: woocommerce
  */
 
 if (!defined('ABSPATH')) {
