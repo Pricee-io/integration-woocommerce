@@ -154,11 +154,10 @@ function pricee_sync_page_callback()
 
     ?>
     <div class="wrap">
-        <h1><?php esc_html_e('Pricee - Synchronisation', 'pricee'); ?></h1>
+        <h1><?php esc_html_e('Pricee.io - Synchronisation', 'pricee'); ?></h1>
 
         <form id="pricee-sync-form">
-            <h4><?php esc_html_e('Synchroniser les produits par catégorie', 'pricee'); ?></h4>
-            <hr>
+            <h2><?php esc_html_e('Synchroniser les produits par catégorie', 'pricee'); ?></h2>
 
             <div id="pricee-sync-loading" style="display:none; color:#666;">
                 <span class="spinner is-active"></span> <?php esc_html_e('Chargement...', 'pricee'); ?>
@@ -166,19 +165,21 @@ function pricee_sync_page_callback()
 
             <div id="pricee-sync-result" style="margin: 10px 0;"></div>
 
-            <?php foreach ($categories as $category) {
-                $product_count = wc_get_products(['category' => [$category->slug], 'limit' => -1]);
-                ?>
-                <div class="form-check">
-                    <input class="form-check-input" type="checkbox"
-                        name="categories[]"
-                        value="<?php echo esc_attr((string) $category->term_id); ?>"
-                        id="category-<?php echo esc_attr((string) $category->term_id); ?>">
-                    <label class="form-check-label" for="category-<?php echo esc_attr((string) $category->term_id); ?>">
-                        <?php echo esc_html($category->name); ?> (<?php echo count($product_count); ?>)
-                    </label>
-                </div>
-            <?php } ?>
+            <div style="margin: 20px 0">
+                <?php foreach ($categories as $category) {
+                    $product_count = wc_get_products(['category' => [$category->slug], 'limit' => -1]);
+                    ?>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox"
+                            name="categories[]"
+                            value="<?php echo esc_attr((string) $category->term_id); ?>"
+                            id="category-<?php echo esc_attr((string) $category->term_id); ?>">
+                        <label class="form-check-label" for="category-<?php echo esc_attr((string) $category->term_id); ?>">
+                            <?php echo esc_html($category->name); ?> (<?php echo count($product_count); ?>)
+                        </label>
+                    </div>
+                <?php } ?>
+            </div>
 
             <button type="submit" class="button button-primary" style="margin-top:10px;">
                 <?php esc_html_e('Synchroniser les produits', 'pricee'); ?>
