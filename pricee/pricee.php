@@ -423,6 +423,7 @@ function pricee_log($message, $level = 'INFO', $file = 'main')
     if (!file_exists($log_dir)) {
         if (!wp_mkdir_p($log_dir) && !is_dir($log_dir)) {
             error_log("Failed to create log folder: {$log_dir}");
+
             return;
         }
     }
