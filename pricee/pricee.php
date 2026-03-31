@@ -326,6 +326,7 @@ add_action('rest_api_init', function () {
 
 function pricee_webhook_handler(WP_REST_Request $request)
 {
+    // Check request
     $body = $request->get_body();
     $signature = $request->get_header('x-signature');
     if (empty($body) || empty($signature)) {
@@ -335,9 +336,9 @@ function pricee_webhook_handler(WP_REST_Request $request)
         ], 400);
     }
 
+    // Check webhook configuration
     $enabled = get_option('pricee_webhook_enabled', '');
     $secret = get_option('pricee_webhook_secret', '');
-
     if (!$enabled || empty($secret)) {
         return new WP_REST_Response([
             'success' => false,
@@ -345,8 +346,8 @@ function pricee_webhook_handler(WP_REST_Request $request)
         ], 401);
     }
 
+    // Verify signature
     $expected_signature = hash_hmac('sha256', $body, $secret);
-
     if (!hash_equals($expected_signature, $signature)) {
         return new WP_REST_Response([
             'success' => false,
@@ -354,9 +355,16 @@ function pricee_webhook_handler(WP_REST_Request $request)
         ], 401);
     }
 
+    // Get JSON
     $data = json_decode($body, true);
+    if (!is_array($data)) {
+        return new WP_REST_Response([
+            'success' => false,
+            'message' => 'Invalid JSON payload',
+        ], 400);
+    }
     foreach ($data as $productData) {
-        if (empty($productData['url']) || empty($productData['bestPriceAmount'])) {
+        if (empty($productData['url']) || !isset($productData['bestPriceAmount'])) {
             continue;
         }
 
@@ -413,7 +421,10 @@ function pricee_log($message, $level = 'INFO', $file = 'main')
     $log_dir = $upload_dir['basedir'].'/pricee/logs/';
 
     if (!file_exists($log_dir)) {
-        wp_mkdir_p($log_dir);
+        if (!wp_mkdir_p($log_dir) && !is_dir($log_dir)) {
+            error_log("Failed to create log folder: {$log_dir}");
+            return;
+        }
     }
 
     $log_file = $log_dir.$file.'.log';
