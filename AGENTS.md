@@ -27,10 +27,11 @@ Run lint and analysis before committing.
 
 ## Versioning
 
-The plugin follows [Semantic Versioning](https://semver.org/). The version is defined in two places in `pricee/pricee.php` and both must be updated together:
+The plugin follows [Semantic Versioning](https://semver.org/). The version is defined in three places and all must be updated together:
 
 1. `Version:` in the plugin header
 2. The `PRICEE_VERSION` constant
+3. A new `## [x.y.z] - YYYY-MM-DD` entry at the top of `CHANGELOG.md`
 
 The `Requires PHP:` header must also stay in sync with `composer.json`, and the README's PHP prerequisite with both.
 
