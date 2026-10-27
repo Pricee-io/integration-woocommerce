@@ -10,7 +10,7 @@
 
 ## Prerequisites
 
-- PHP 7.4 or higher
+- PHP 8.2 or higher
 
 ## Installation
 

@@ -2,9 +2,9 @@
 
 /*
  * Plugin Name: Pricee
- * Description: PrestaShop integration with WooCommerce
- * Version: 1.0.2
- * Requires PHP: 7.4
+ * Description: Pricee integration with WooCommerce
+ * Version: 1.3.0
+ * Requires PHP: 8.2
  * Author: Pricee.io
  * Text Domain: pricee
  * Requires Plugins: woocommerce
@@ -20,7 +20,10 @@ if (file_exists(__DIR__.'/vendor/autoload.php')) {
 
 define('PRICEE_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('PRICEE_PLUGIN_URL', plugin_dir_url(__FILE__));
-define('PRICEE_VERSION', '1.2.0');
+define('PRICEE_VERSION', '1.3.0');
+
+// Maximum age (in seconds) of a signed webhook payload before it is rejected as stale
+define('PRICEE_WEBHOOK_MAX_AGE', 300);
 
 require_once PRICEE_PLUGIN_DIR.'includes/class-pricee-api-service.php';
 
@@ -75,8 +78,8 @@ class Pricee_Plugin
         if ('toplevel_page_pricee-settings' !== $hook) {
             return;
         }
-        wp_enqueue_style('pricee-admin-css', PRICEE_PLUGIN_URL.'assets/css/admin.css', [], PRICEE_VERSION);
-        wp_enqueue_script('pricee-admin-js', PRICEE_PLUGIN_URL.'assets/js/admin.js', ['jquery'], PRICEE_VERSION, true);
+        wp_enqueue_style('pricee-admin-css', PRICEE_PLUGIN_URL.'assets/admin.css', [], PRICEE_VERSION);
+        wp_enqueue_script('pricee-admin-js', PRICEE_PLUGIN_URL.'assets/admin.js', ['jquery'], PRICEE_VERSION, true);
     }
 
     public function settings_page()
@@ -363,6 +366,38 @@ function pricee_webhook_handler(WP_REST_Request $request)
             'message' => 'Invalid JSON payload',
         ], 400);
     }
+
+    // Replay protection: each entry must carry a fresh signed timestamp
+    // and a nonce that has not been used within the accepted window
+    foreach ($data as $productData) {
+        if (!isset($productData['timestamp'])
+            || !is_numeric($productData['timestamp'])
+            || !isset($productData['nonce'])
+            || !is_string($productData['nonce'])
+            || '' === $productData['nonce']) {
+            return new WP_REST_Response([
+                'success' => false,
+                'message' => 'Missing timestamp or nonce',
+            ], 401);
+        }
+
+        if (abs(time() - (int) $productData['timestamp']) > PRICEE_WEBHOOK_MAX_AGE) {
+            return new WP_REST_Response([
+                'success' => false,
+                'message' => 'Expired webhook payload',
+            ], 401);
+        }
+
+        $nonce_key = 'pricee_nonce_'.hash('sha256', $productData['nonce']);
+        if (false !== get_transient($nonce_key)) {
+            return new WP_REST_Response([
+                'success' => false,
+                'message' => 'Replayed webhook payload',
+            ], 401);
+        }
+        set_transient($nonce_key, 1, 2 * PRICEE_WEBHOOK_MAX_AGE);
+    }
+
     foreach ($data as $productData) {
         if (empty($productData['url']) || !isset($productData['bestPriceAmount'])) {
             continue;
@@ -385,10 +420,26 @@ function pricee_webhook_handler(WP_REST_Request $request)
         }
 
         try {
-            // Update price
-            $current_price = $product->get_regular_price();
-            $new_price = (string) $productData['bestPriceAmount'];
-            $product->set_regular_price($new_price);
+            // Validate the received price before writing it
+            $new_price = (float) $productData['bestPriceAmount'];
+            if (!is_numeric($productData['bestPriceAmount']) || $new_price <= 0) {
+                pricee_log(
+                    'Invalid price received for product ID '.$product->get_id().' | Price: '.print_r($productData['bestPriceAmount'], true),
+                    'WARNING',
+                    'webhook'
+                );
+
+                continue;
+            }
+
+            // When the product is on sale, the effective price is the sale price
+            if ($product->is_on_sale('edit')) {
+                $current_price = $product->get_sale_price();
+                $product->set_sale_price((string) $new_price);
+            } else {
+                $current_price = $product->get_regular_price();
+                $product->set_regular_price((string) $new_price);
+            }
             $product->save();
 
             pricee_log(
