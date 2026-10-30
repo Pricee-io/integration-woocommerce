@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Fix webhook batches sharing a single nonce being rejected as replays
+- Paginate the Pricee websites API so accounts with many websites are found during sync
+- Sync each product only once when the selected categories overlap
+- Add a nonce check to the sync AJAX endpoint
+- Log to the server error log instead of web-accessible files in the uploads directory
+
 ## [1.4.0] - 2026-10-30
 
 - Update product URLs on Pricee during sync when they changed and adopt products synced before external IDs existed, without creating duplicates

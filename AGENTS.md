@@ -35,8 +35,13 @@ The plugin follows [Semantic Versioning](https://semver.org/). The version is de
 
 The `Requires PHP:` header must also stay in sync with `composer.json`, and the README's PHP prerequisite with both.
 
+Changelog rules (this is a WordPress plugin, so the changelog is read by merchants, not developers):
+
+- Only user-facing changes: what the plugin user sees or experiences in the WordPress admin or the storefront. Skip CI, tooling, Dependabot, static analysis and internal refactors.
+- One short line per change, no implementation details (no function names, no file paths, no "fix X by doing Y" narration).
+
 ## Webhook contract
 
-The payload is a JSON array of entries signed with HMAC-SHA256 over the **raw request body** using the webhook secret (`X-Signature` header). Each entry carries `url`, `extId` (optional: the shop's internal product ID, null for products synced before external IDs existed), `bestPriceAmount`, `bestPriceCurrency`, `timestamp` and `nonce`; the plugin rejects entries with a missing/stale timestamp (> `PRICEE_WEBHOOK_MAX_AGE`) or an already-used nonce (replay protection).
+The payload is a JSON array of entries signed with HMAC-SHA256 over the **raw request body** using the webhook secret (`X-Signature` header). Each entry carries `url`, `extId` (optional: the shop's internal product ID, null for products synced before external IDs existed), `bestPriceAmount`, `bestPriceCurrency`, `timestamp` and `nonce`; the plugin rejects entries with a missing/stale timestamp (> `PRICEE_WEBHOOK_MAX_AGE`) or an already-used nonce (replay protection; a nonce shared by all entries of one batch is consumed only once per payload).
 
 Any change to this format is a cross-repo contract: the sender lives in `../app/src/Service/WebhookService.php` and the PrestaShop integration validates the same signature — keep changes backward compatible or coordinate all three.

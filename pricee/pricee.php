@@ -162,6 +162,7 @@ function pricee_sync_page_callback()
         <h1><?php esc_html_e('Pricee.io - Synchronisation', 'pricee'); ?></h1>
 
         <form id="pricee-sync-form">
+            <?php wp_nonce_field('pricee_sync_products', 'pricee_sync_nonce'); ?>
             <h2><?php esc_html_e('Synchroniser les produits par catégorie', 'pricee'); ?></h2>
 
             <div id="pricee-sync-loading" style="display:none; color:#666;">
@@ -238,7 +239,12 @@ function pricee_sync_page_callback()
 // AJAX handler for syncing products to Pricee
 add_action('wp_ajax_pricee_sync_products', function () {
     if (!current_user_can('manage_options')) {
-        wp_send_json_error(['message' => 'Permission denied']);
+        wp_send_json_error(['message' => 'Permission denied'], 403);
+    }
+
+    if (!isset($_POST['pricee_sync_nonce'])
+        || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['pricee_sync_nonce'])), 'pricee_sync_products')) {
+        wp_send_json_error(['message' => 'Invalid nonce'], 403);
     }
 
     if (!class_exists('Pricee_API_Service')) {
@@ -248,6 +254,7 @@ add_action('wp_ajax_pricee_sync_products', function () {
     $categories = isset($_POST['categories']) ? array_map('intval', $_POST['categories']) : [];
     $synced_count = 0;
     $max_products = 500;
+    $seen_product_ids = [];
 
     $client_id = get_option('pricee_client_id');
     $api_key = get_option('pricee_api_key');
@@ -294,8 +301,13 @@ add_action('wp_ajax_pricee_sync_products', function () {
                         break 2; // break outer loop
                     }
 
+                    $product_id = $product->get_id();
+                    if (isset($seen_product_ids[$product_id])) {
+                        continue; // already synced via another selected category
+                    }
+                    $seen_product_ids[$product_id] = true;
+
                     try {
-                        $product_id = $product->get_id();
                         $product_url = get_permalink($product_id);
                         $api_service->create_or_update_product($bearer, $website_id, $product_url, (string) $product_id);
                         ++$synced_count;
@@ -369,7 +381,10 @@ function pricee_webhook_handler(WP_REST_Request $request)
     }
 
     // Replay protection: each entry must carry a fresh signed timestamp
-    // and a nonce that has not been used within the accepted window
+    // and a nonce that has not been used within the accepted window.
+    // The app signs a whole batch with a single nonce, so each distinct
+    // nonce is consumed only once per payload.
+    $seen_nonces = [];
     foreach ($data as $productData) {
         if (!isset($productData['timestamp'])
             || !is_numeric($productData['timestamp'])
@@ -390,6 +405,11 @@ function pricee_webhook_handler(WP_REST_Request $request)
         }
 
         $nonce_key = 'pricee_nonce_'.hash('sha256', $productData['nonce']);
+        if (isset($seen_nonces[$nonce_key])) {
+            continue;
+        }
+        $seen_nonces[$nonce_key] = true;
+
         if (false !== get_transient($nonce_key)) {
             return new WP_REST_Response([
                 'success' => false,
@@ -469,24 +489,9 @@ function pricee_log($message, $level = 'INFO', $file = 'main')
         $message = print_r($message, true);
     }
 
-    $upload_dir = wp_upload_dir();
-    $log_dir = $upload_dir['basedir'].'/pricee/logs/';
-
-    if (!file_exists($log_dir)) {
-        if (!wp_mkdir_p($log_dir) && !is_dir($log_dir)) {
-            error_log("Failed to create log folder: {$log_dir}");
-
-            return;
-        }
-    }
-
-    $log_file = $log_dir.$file.'.log';
-
-    $time = current_time('Y-m-d H:i:s');
-
-    $line = "[{$time}] [{$level}] {$message}".PHP_EOL;
-
-    file_put_contents($log_file, $line, FILE_APPEND);
+    // error_log writes to the server/PHP log (or WP debug.log when
+    // WP_DEBUG_LOG is enabled), never to a web-accessible file
+    error_log(sprintf('[%s] [pricee][%s][%s] %s', current_time('Y-m-d H:i:s'), $file, $level, $message));
 }
 
 // Add settings link in Plugins page

@@ -10,6 +10,8 @@ if (!defined('ABSPATH')) {
 class Pricee_API_Service
 {
     private const BASE_URL = 'https://app.pricee.io/api/v1/';
+    private const API_PAGE_SIZE = 30;
+    private const MAX_WEBSITE_PAGES = 20;
 
     /**
      * Get Bearer token from Pricee API.
@@ -49,27 +51,36 @@ class Pricee_API_Service
      */
     public function get_websites(string $bearer): array
     {
-        $response = wp_remote_get(self::BASE_URL.'websites', [
-            'headers' => [
-                'Content-Type' => 'application/json',
-                'Authorization' => 'Bearer '.$bearer,
-            ],
-            'timeout' => 20,
-        ]);
+        $websites = [];
+        $page = 1;
 
-        if (is_wp_error($response)) {
-            throw new RuntimeException('Failed to fetch websites: '.$response->get_error_message());
-        }
+        do {
+            $response = wp_remote_get(self::BASE_URL.'websites?page='.$page, [
+                'headers' => [
+                    'Content-Type' => 'application/json',
+                    'Authorization' => 'Bearer '.$bearer,
+                ],
+                'timeout' => 20,
+            ]);
 
-        $status = wp_remote_retrieve_response_code($response);
-        $body = wp_remote_retrieve_body($response);
-        $data = json_decode($body, true);
+            if (is_wp_error($response)) {
+                throw new RuntimeException('Failed to fetch websites: '.$response->get_error_message());
+            }
 
-        if (200 !== $status || !isset($data['member'])) {
-            throw new RuntimeException('Failed to fetch websites. Status: '.$status.'. Response: '.$body);
-        }
+            $status = wp_remote_retrieve_response_code($response);
+            $body = wp_remote_retrieve_body($response);
+            $data = json_decode($body, true);
 
-        return $data['member'];
+            if (200 !== $status) {
+                throw new RuntimeException('Failed to fetch websites. Status: '.$status.'. Response: '.$body);
+            }
+
+            $members = is_array($data) && isset($data['member']) && is_array($data['member']) ? $data['member'] : [];
+            $websites = array_merge($websites, $members);
+            ++$page;
+        } while (count($members) >= self::API_PAGE_SIZE && $page <= self::MAX_WEBSITE_PAGES);
+
+        return $websites;
     }
 
     /**
