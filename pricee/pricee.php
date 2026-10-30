@@ -295,11 +295,12 @@ add_action('wp_ajax_pricee_sync_products', function () {
                     }
 
                     try {
-                        $product_url = get_permalink($product->get_id());
-                        $api_service->create_product($bearer, $website_id, $product_url);
+                        $product_id = $product->get_id();
+                        $product_url = get_permalink($product_id);
+                        $api_service->create_or_update_product($bearer, $website_id, $product_url, (string) $product_id);
                         ++$synced_count;
                     } catch (Exception $e) {
-                        // ignore individual product errors
+                        pricee_log('Failed to sync product ID '.$product->get_id().': '.$e->getMessage(), 'ERROR', 'sync');
                     }
                 }
 

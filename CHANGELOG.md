@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Update product URLs on Pricee during sync when they changed and adopt products synced before external IDs existed, without creating duplicates
+
 ## [1.3.0] - 2026-10-27
 
 - Reject webhook payloads without a fresh signed timestamp and an unused nonce (replay protection)
