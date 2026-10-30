@@ -3,7 +3,7 @@
 /*
  * Plugin Name: Pricee
  * Description: Pricee integration with WooCommerce
- * Version: 1.4.0
+ * Version: 1.4.1
  * Requires PHP: 8.2
  * Author: Pricee.io
  * Text Domain: pricee
@@ -20,7 +20,7 @@ if (file_exists(__DIR__.'/vendor/autoload.php')) {
 
 define('PRICEE_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('PRICEE_PLUGIN_URL', plugin_dir_url(__FILE__));
-define('PRICEE_VERSION', '1.4.0');
+define('PRICEE_VERSION', '1.4.1');
 
 // Maximum age (in seconds) of a signed webhook payload before it is rejected as stale
 define('PRICEE_WEBHOOK_MAX_AGE', 300);
