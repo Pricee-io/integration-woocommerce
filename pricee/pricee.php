@@ -458,9 +458,11 @@ function pricee_webhook_handler(WP_REST_Request $request)
     // A large call writes many products, each one running the shop's hooks
     @set_time_limit(300);
 
+    $results = [];
     $outcomes = [];
     foreach ($data as $productData) {
         $outcome = pricee_apply_webhook_entry(is_array($productData) ? $productData : []);
+        $results[] = $outcome;
         $outcomes[$outcome] = ($outcomes[$outcome] ?? 0) + 1;
     }
 
@@ -469,6 +471,8 @@ function pricee_webhook_handler(WP_REST_Request $request)
         'message' => 'Webhook received and validated',
         // How many entries were updated, unchanged or skipped, and why
         'outcomes' => $outcomes,
+        // The outcome of each entry, in payload order
+        'results' => $results,
     ], 200);
 }
 
