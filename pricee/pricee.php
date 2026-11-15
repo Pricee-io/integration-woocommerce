@@ -24,6 +24,8 @@ define('PRICEE_VERSION', '1.4.1');
 
 // Maximum age (in seconds) of a signed webhook payload before it is rejected as stale
 define('PRICEE_WEBHOOK_MAX_AGE', 300);
+// Products synced per request: the sync page sends one request per batch
+define('PRICEE_SYNC_BATCH_SIZE', 50);
 
 require_once PRICEE_PLUGIN_DIR.'includes/class-pricee-api-service.php';
 
@@ -194,43 +196,80 @@ function pricee_sync_page_callback()
     </div>
 
     <script>
+    // The sync runs in batches, one request each, so a large selection never
+    // hits a timeout: each answer gives the cursor for the next batch.
     document.getElementById('pricee-sync-form').addEventListener('submit', function(e) {
         e.preventDefault();
 
         const form = e.target;
+        const button = form.querySelector('button[type="submit"]');
         const result = document.getElementById('pricee-sync-result');
         const loading = document.getElementById('pricee-sync-loading');
+        let synced = 0;
+        let failed = 0;
 
+        const show = (type, message) => {
+            result.style.display = 'block';
+            result.className = 'notice notice-' + type;
+            result.innerText = message;
+        };
+        const finish = () => {
+            loading.style.display = 'none';
+            button.disabled = false;
+        };
+        const syncedMessage = () => synced + ' <?php echo esc_js(__('produits synchronisés', 'pricee')); ?>'
+            + (failed > 0 ? ', ' + failed + ' <?php echo esc_js(__('en erreur (voir les logs)', 'pricee')); ?>' : '');
+        const fail = (message) => {
+            finish();
+            show('error', '<?php echo esc_js(__('Erreur lors de la synchronisation', 'pricee')); ?>'
+                + (message ? ' : ' + message : '')
+                + (synced + failed > 0 ? ' (' + syncedMessage() + ')' : ''));
+        };
+
+        if (!form.querySelector('input[name="categories[]"]:checked')) {
+            show('warning', '<?php echo esc_js(__('Sélectionnez au moins une catégorie.', 'pricee')); ?>');
+
+            return;
+        }
+
+        button.disabled = true;
         loading.style.display = 'block';
         result.style.display = 'none';
 
-        const data = new FormData(form);
-        data.append('action', 'pricee_sync_products'); // AJAX action
+        const syncBatch = (afterId) => {
+            const data = new FormData(form);
+            data.append('action', 'pricee_sync_products'); // AJAX action
+            data.append('after_id', afterId);
 
-        fetch(ajaxurl, { // WordPress provides ajaxurl in admin
-            method: 'POST',
-            credentials: 'same-origin',
-            body: data
-        })
-        .then(response => response.json())
-        .then(data => {
-            loading.style.display = 'none';
-            result.style.display = 'block';
+            fetch(ajaxurl, { // WordPress provides ajaxurl in admin
+                method: 'POST',
+                credentials: 'same-origin',
+                body: data
+            })
+            .then(response => response.json())
+            .then(answer => {
+                if (!answer.success) {
+                    fail(answer.data && answer.data.message);
 
-            if (data.success) {
-                result.className = 'notice notice-success';
-                result.innerText = data.data.synced + ' produits synchronisés';
-            } else {
-                result.className = 'notice notice-error';
-                result.innerText = '<?php echo esc_js('Error during synchronization'); ?>';
-            }
-        })
-        .catch(() => {
-            loading.style.display = 'none';
-            result.style.display = 'block';
-            result.className = 'notice notice-error';
-            result.innerText = '<?php echo esc_js('Error during synchronization'); ?>';
-        });
+                    return;
+                }
+
+                synced += answer.data.synced;
+                failed += answer.data.failed;
+                if (answer.data.done) {
+                    finish();
+                    show(failed > 0 ? 'warning' : 'success', syncedMessage());
+
+                    return;
+                }
+
+                show('info', '<?php echo esc_js(__('Synchronisation en cours :', 'pricee')); ?> ' + (synced + failed) + ' / ' + answer.data.total);
+                syncBatch(answer.data.last_id);
+            })
+            .catch(() => fail(''));
+        };
+
+        syncBatch(0);
     });
     </script>
     <?php
@@ -251,10 +290,12 @@ add_action('wp_ajax_pricee_sync_products', function () {
         require_once PRICEE_PLUGIN_DIR.'includes/class-pricee-api-service.php';
     }
 
-    $categories = isset($_POST['categories']) ? array_map('intval', $_POST['categories']) : [];
-    $synced_count = 0;
-    $max_products = 500;
-    $seen_product_ids = [];
+    $categories = isset($_POST['categories']) ? array_map('intval', (array) $_POST['categories']) : [];
+    if ([] === $categories) {
+        wp_send_json_error(['message' => 'No category selected.'], 400);
+    }
+    // Batch cursor: the sync goes on after the last product of the previous batch
+    $after_id = isset($_POST['after_id']) ? max(0, (int) $_POST['after_id']) : 0;
 
     $client_id = get_option('pricee_client_id');
     $api_key = get_option('pricee_api_key');
@@ -262,6 +303,25 @@ add_action('wp_ajax_pricee_sync_products', function () {
     if (empty($client_id) || empty($api_key)) {
         wp_send_json_error(['message' => 'Pricee API credentials are missing.']);
     }
+
+    // The published products of the selected categories, each once, in ID
+    // order: one batch per request, so a large selection never hits a timeout
+    $all_ids = array_map('intval', (array) wc_get_products([
+        'product_category_id' => $categories,
+        'status' => 'publish',
+        'limit' => -1,
+        'return' => 'ids',
+    ]));
+    $all_ids = array_values(array_unique($all_ids));
+    sort($all_ids);
+    $remaining_ids = array_values(array_filter($all_ids, static fn (int $id): bool => $id > $after_id));
+    $batch_ids = array_slice($remaining_ids, 0, PRICEE_SYNC_BATCH_SIZE);
+    if ([] === $batch_ids) {
+        wp_send_json_success(['synced' => 0, 'failed' => 0, 'last_id' => $after_id, 'done' => true, 'total' => count($all_ids)]);
+    }
+
+    $synced_count = 0;
+    $failed_count = 0;
 
     try {
         $api_service = new Pricee_API_Service();
@@ -284,47 +344,23 @@ add_action('wp_ajax_pricee_sync_products', function () {
             $website_id = $website['@id'];
         }
 
-        foreach ($categories as $cat_id) {
-            $limit = 100;
-            $offset = 0;
-
-            do {
-                $products = wc_get_products([
-                    'product_category_id' => [$cat_id],
-                    'limit' => $limit,
-                    'offset' => $offset,
-                    'status' => 'publish', // make sure only published products
-                ]);
-
-                foreach ($products as $product) {
-                    if ($synced_count >= $max_products) {
-                        break 2; // break outer loop
-                    }
-
-                    $product_id = $product->get_id();
-                    if (isset($seen_product_ids[$product_id])) {
-                        continue; // already synced via another selected category
-                    }
-                    $seen_product_ids[$product_id] = true;
-
-                    try {
-                        $product_url = get_permalink($product_id);
-                        $api_service->create_or_update_product($bearer, $website_id, $product_url, (string) $product_id);
-                        ++$synced_count;
-                    } catch (Exception $e) {
-                        pricee_log('Failed to sync product ID '.$product->get_id().': '.$e->getMessage(), 'ERROR', 'sync');
-                    }
-                }
-
-                $offset += $limit;
-            } while (!empty($products) && $synced_count < $max_products);
-
-            if ($synced_count >= $max_products) {
-                break;
+        foreach ($batch_ids as $product_id) {
+            try {
+                $api_service->create_or_update_product($bearer, $website_id, (string) get_permalink($product_id), (string) $product_id);
+                ++$synced_count;
+            } catch (Exception $e) {
+                ++$failed_count;
+                pricee_log('Failed to sync product ID '.$product_id.': '.$e->getMessage(), 'ERROR', 'sync');
             }
         }
 
-        wp_send_json_success(['synced' => $synced_count]);
+        wp_send_json_success([
+            'synced' => $synced_count,
+            'failed' => $failed_count,
+            'last_id' => end($batch_ids),
+            'done' => count($remaining_ids) <= PRICEE_SYNC_BATCH_SIZE,
+            'total' => count($all_ids),
+        ]);
     } catch (Exception $e) {
         wp_send_json_error(['message' => $e->getMessage()]);
     }
@@ -419,68 +455,121 @@ function pricee_webhook_handler(WP_REST_Request $request)
         set_transient($nonce_key, 1, 2 * PRICEE_WEBHOOK_MAX_AGE);
     }
 
+    // A large call writes many products, each one running the shop's hooks
+    @set_time_limit(300);
+
+    $outcomes = [];
     foreach ($data as $productData) {
-        if (empty($productData['url']) || !isset($productData['bestPriceAmount'])) {
-            continue;
-        }
-
-        // Find product by URL
-        $product_id = url_to_postid($productData['url']);
-        if (!$product_id) {
-            continue; // URL does not match any product
-        }
-
-        $product = wc_get_product($product_id);
-        if (!$product) {
-            continue; // Product not found
-        }
-
-        // Only update simple products for now (no variants)
-        if ('simple' !== $product->get_type()) {
-            continue;
-        }
-
-        try {
-            // Validate the received price before writing it
-            $new_price = (float) $productData['bestPriceAmount'];
-            if (!is_numeric($productData['bestPriceAmount']) || $new_price <= 0) {
-                pricee_log(
-                    'Invalid price received for product ID '.$product->get_id().' | Price: '.print_r($productData['bestPriceAmount'], true),
-                    'WARNING',
-                    'webhook'
-                );
-
-                continue;
-            }
-
-            // When the product is on sale, the effective price is the sale price
-            if ($product->is_on_sale('edit')) {
-                $current_price = $product->get_sale_price();
-                $product->set_sale_price((string) $new_price);
-            } else {
-                $current_price = $product->get_regular_price();
-                $product->set_regular_price((string) $new_price);
-            }
-            $product->save();
-
-            pricee_log(
-                "Price updated for product ID {$product->get_id()} | Old: {$current_price} -> New: {$new_price}",
-                'INFO',
-                'webhook'
-            );
-        } catch (Exception $e) {
-            pricee_log(
-                "Price update failed for product ID {$product->get_id()} : ".$e->getMessage(),
-                'ERROR',
-                'webhook'
-            );
-        }
+        $outcome = pricee_apply_webhook_entry(is_array($productData) ? $productData : []);
+        $outcomes[$outcome] = ($outcomes[$outcome] ?? 0) + 1;
     }
 
     return new WP_REST_Response([
         'success' => true,
         'message' => 'Webhook received and validated',
+        // How many entries were updated, unchanged or skipped, and why
+        'outcomes' => $outcomes,
     ], 200);
+}
+
+/**
+ * Apply one webhook entry: write its price only when every check passes.
+ * Writing a price is the critical action: in any doubtful case the entry is
+ * skipped and logged, never guessed.
+ *
+ * @param array<string, mixed> $productData
+ *
+ * @return string the outcome of the entry
+ */
+function pricee_apply_webhook_entry(array $productData): string
+{
+    $rawPrice = $productData['priceAmount'] ?? null;
+    if (!is_numeric($rawPrice) || (float) $rawPrice <= 0) {
+        return pricee_skip_entry('skipped_invalid_price', 'invalid price '.print_r($rawPrice, true), $productData);
+    }
+
+    // Product prices are in the shop currency: an amount in another one cannot be written as is
+    $currency = $productData['priceCurrency'] ?? null;
+    if (!is_string($currency) || strtoupper($currency) !== strtoupper(get_woocommerce_currency())) {
+        return pricee_skip_entry('skipped_currency', 'price currency '.print_r($currency, true).' is not the shop currency', $productData);
+    }
+
+    // Pricee computes the new price from the price it last read on the page:
+    // when the merchant changed it since, their change wins
+    $readPrice = $productData['currentPriceAmount'] ?? null;
+    if (!is_numeric($readPrice)) {
+        return pricee_skip_entry('skipped_no_read_price', 'no current price sent to compare with the shop price', $productData);
+    }
+
+    // By extId (the product ID sent at sync) when present, never falling back
+    // to the URL for a stale one; by URL for products synced before extId existed
+    $extId = $productData['extId'] ?? null;
+    if (null !== $extId && '' !== $extId) {
+        $product = is_numeric($extId) ? wc_get_product((int) $extId) : null;
+    } else {
+        $productId = is_string($productData['url'] ?? null) ? url_to_postid($productData['url']) : 0;
+        $product = $productId ? wc_get_product($productId) : null;
+    }
+    if (!$product instanceof WC_Product) {
+        return pricee_skip_entry('skipped_unknown_product', 'no product matches the entry', $productData);
+    }
+
+    // Only simple products: a variable product's page shows a price range
+    if ('simple' !== $product->get_type()) {
+        return pricee_skip_entry('skipped_unsupported_type', 'not a simple product', $productData);
+    }
+
+    if ('publish' !== $product->get_status()) {
+        return pricee_skip_entry('skipped_not_published', 'product not published', $productData);
+    }
+
+    // A sale, current or scheduled, is the merchant's: never written over
+    if ('' !== (string) $product->get_sale_price('edit') || null !== $product->get_date_on_sale_from('edit')) {
+        return pricee_skip_entry('skipped_promotion', 'product on sale or with a scheduled sale', $productData);
+    }
+
+    // Compared as visitors see it (tax included or not, as the shop displays
+    // prices), rounded to the shop's decimals
+    $decimals = wc_get_price_decimals();
+    $storedPrice = (float) $product->get_regular_price('edit');
+    $displayedPrice = (float) wc_get_price_to_display($product);
+    if ($storedPrice <= 0 || $displayedPrice <= 0) {
+        return pricee_skip_entry('skipped_invalid_price', 'no current price to compare with', $productData);
+    }
+    if (abs(round($displayedPrice, $decimals) - round((float) $readPrice, $decimals)) >= 0.000001) {
+        return pricee_skip_entry('skipped_price_changed_in_shop', 'the shop price '.$displayedPrice.' is no longer the one Pricee read ('.$readPrice.')', $productData);
+    }
+
+    if (abs(round($displayedPrice, $decimals) - round((float) $rawPrice, $decimals)) < 0.000001) {
+        return 'unchanged';
+    }
+
+    // The received price is the displayed one: stored with the same ratio as
+    // the current price, which removes or adds the tax as the shop needs
+    $newPrice = round((float) $rawPrice * $storedPrice / $displayedPrice, 6);
+
+    try {
+        $product->set_regular_price(wc_format_decimal($newPrice));
+        $product->save();
+    } catch (Exception $e) {
+        pricee_log('Price update failed for product ID '.$product->get_id().': '.$e->getMessage(), 'ERROR', 'webhook');
+
+        return 'failed';
+    }
+
+    pricee_log("Price updated for product ID {$product->get_id()} | Old: {$storedPrice} -> New: {$newPrice}", 'INFO', 'webhook');
+
+    return 'updated_price';
+}
+
+/**
+ * @param array<string, mixed> $productData
+ */
+function pricee_skip_entry(string $outcome, string $reason, array $productData): string
+{
+    pricee_log('Entry skipped ('.print_r($productData['extId'] ?? $productData['url'] ?? '', true).'): '.$reason, 'WARNING', 'webhook');
+
+    return $outcome;
 }
 
 function pricee_log($message, $level = 'INFO', $file = 'main')

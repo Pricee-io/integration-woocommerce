@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+- Follow the updated format of Pricee's webhook calls, required for automatic price updates
+- Never overwrite a price you changed yourself: a webhook update is skipped when the product's price changed since Pricee last read it
+- Never modify a sale: products on sale or with a scheduled sale are no longer updated by the webhook
+- Fix webhook prices being saved tax included in shops entering prices without tax, which added the tax a second time
+- Skip webhook price updates in a currency other than the shop's and for unpublished products, and match updates to the product synced with its ID instead of its URL
+- Sync large catalogs without timeouts: products are sent in batches with a progress indicator and the number of products in error, and the 500-product limit is removed
+
 ## [1.4.1] - 2026-10-30
 
 - Fix webhook batches sharing a single nonce being rejected as replays
