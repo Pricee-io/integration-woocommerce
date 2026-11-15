@@ -14,11 +14,14 @@ class Pricee_API_Service
     private const MAX_WEBSITE_PAGES = 20;
 
     /**
-     * Get Bearer token from Pricee API.
+     * Log in with the API key. Returns the JWT and the IRI of the website
+     * the key is scoped to (null if the API does not return one).
+     *
+     * @return array{token: string, website: ?string}
      *
      * @throws Exception
      */
-    public function get_bearer(string $clientId, string $apiKey): string
+    public function login(string $clientId, string $apiKey): array
     {
         $response = wp_remote_post(self::BASE_URL.'login', [
             'headers' => [
@@ -41,7 +44,10 @@ class Pricee_API_Service
             throw new RuntimeException('Failed to get bearer token. Status: '.$status.'. Response: '.$body);
         }
 
-        return $data['token'];
+        return [
+            'token' => (string) $data['token'],
+            'website' => isset($data['website']) && is_string($data['website']) ? $data['website'] : null,
+        ];
     }
 
     /**
@@ -81,36 +87,6 @@ class Pricee_API_Service
         } while (count($members) >= self::API_PAGE_SIZE && $page <= self::MAX_WEBSITE_PAGES);
 
         return $websites;
-    }
-
-    /**
-     * Create a new website in Pricee.
-     *
-     * @throws Exception
-     */
-    public function create_website(string $bearer, string $url): array
-    {
-        $response = wp_remote_post(self::BASE_URL.'websites', [
-            'headers' => [
-                'Content-Type' => 'application/ld+json',
-                'Authorization' => 'Bearer '.$bearer,
-            ],
-            'body' => wp_json_encode(['url' => $url]),
-            'timeout' => 20,
-        ]);
-
-        if (is_wp_error($response)) {
-            throw new RuntimeException('Failed to create website: '.$response->get_error_message());
-        }
-
-        $status = wp_remote_retrieve_response_code($response);
-        $body = wp_remote_retrieve_body($response);
-
-        if (201 !== $status) {
-            throw new RuntimeException('Failed to create website. Status: '.$status.'. Response: '.$body);
-        }
-
-        return json_decode($body, true);
     }
 
     /**

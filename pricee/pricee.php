@@ -325,24 +325,9 @@ add_action('wp_ajax_pricee_sync_products', function () {
 
     try {
         $api_service = new Pricee_API_Service();
-        $bearer = $api_service->get_bearer($client_id, $api_key);
-
-        $website_url = rtrim(home_url('/'), '/');
-        $websites = $api_service->get_websites($bearer);
-        $website_id = null;
-
-        foreach ($websites as $site) {
-            if (rtrim($site['url'], '/') === $website_url) {
-                $website_id = $site['@id'];
-
-                break;
-            }
-        }
-
-        if (!$website_id) {
-            $website = $api_service->create_website($bearer, $website_url);
-            $website_id = $website['@id'];
-        }
+        $login = $api_service->login($client_id, $api_key);
+        $bearer = $login['token'];
+        $website_id = pricee_resolve_website_id($api_service, $login, rtrim(home_url('/'), '/'));
 
         foreach ($batch_ids as $product_id) {
             try {
@@ -365,6 +350,36 @@ add_action('wp_ajax_pricee_sync_products', function () {
         wp_send_json_error(['message' => $e->getMessage()]);
     }
 });
+
+/**
+ * The Pricee website to sync to: the one the API key is scoped to, which
+ * must be this shop's website (host compared like Pricee does: without
+ * scheme and "www.").
+ *
+ * @param array{token: string, website: ?string} $login
+ *
+ * @throws RuntimeException
+ */
+function pricee_resolve_website_id(Pricee_API_Service $api_service, array $login, string $website_url): string
+{
+    if (null === $login['website']) {
+        throw new RuntimeException('This API key is not tied to a website. Create an API key from the Integrations page of this shop\'s website on Pricee.');
+    }
+
+    $host = static fn (string $url): string => (string) preg_replace('/^www\./', '', strtolower((string) wp_parse_url($url, PHP_URL_HOST)));
+
+    foreach ($api_service->get_websites($login['token']) as $site) {
+        if ($site['@id'] === $login['website'] && $host((string) $site['url']) !== $host($website_url)) {
+            throw new RuntimeException(sprintf(
+                'This API key belongs to the Pricee website %s, not to this shop (%s). Use an API key created from the Integrations page of this shop\'s website on Pricee.',
+                $site['url'],
+                $website_url
+            ));
+        }
+    }
+
+    return $login['website'];
+}
 
 // Register Pricee webhook endpoint
 // @phpstan-ignore-next-line
