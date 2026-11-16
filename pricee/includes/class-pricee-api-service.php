@@ -10,8 +10,6 @@ if (!defined('ABSPATH')) {
 class Pricee_API_Service
 {
     private const BASE_URL = 'https://app.pricee.io/api/v1/';
-    private const API_PAGE_SIZE = 30;
-    private const MAX_WEBSITE_PAGES = 20;
 
     /**
      * Log in with the API key. Returns the JWT and the IRI of the website
@@ -51,42 +49,36 @@ class Pricee_API_Service
     }
 
     /**
-     * Get websites associated with the account.
+     * The website an API key is scoped to, read directly: a key can always
+     * read its own website, however many websites the account has.
+     *
+     * @return array<string, mixed>
      *
      * @throws Exception
      */
-    public function get_websites(string $bearer): array
+    public function get_website(string $bearer, string $websiteId): array
     {
-        $websites = [];
-        $page = 1;
+        $response = wp_remote_get(self::BASE_URL.'websites/'.$this->extract_uuid($websiteId), [
+            'headers' => [
+                'Accept' => 'application/ld+json',
+                'Authorization' => 'Bearer '.$bearer,
+            ],
+            'timeout' => 20,
+        ]);
 
-        do {
-            $response = wp_remote_get(self::BASE_URL.'websites?page='.$page, [
-                'headers' => [
-                    'Content-Type' => 'application/json',
-                    'Authorization' => 'Bearer '.$bearer,
-                ],
-                'timeout' => 20,
-            ]);
+        if (is_wp_error($response)) {
+            throw new RuntimeException('Failed to fetch the website of the API key: '.$response->get_error_message());
+        }
 
-            if (is_wp_error($response)) {
-                throw new RuntimeException('Failed to fetch websites: '.$response->get_error_message());
-            }
+        $status = wp_remote_retrieve_response_code($response);
+        $body = wp_remote_retrieve_body($response);
+        $data = json_decode($body, true);
 
-            $status = wp_remote_retrieve_response_code($response);
-            $body = wp_remote_retrieve_body($response);
-            $data = json_decode($body, true);
+        if (200 !== $status || !is_array($data)) {
+            throw new RuntimeException('Failed to fetch the website of the API key. Status: '.$status.'. Response: '.$body);
+        }
 
-            if (200 !== $status) {
-                throw new RuntimeException('Failed to fetch websites. Status: '.$status.'. Response: '.$body);
-            }
-
-            $members = is_array($data) && isset($data['member']) && is_array($data['member']) ? $data['member'] : [];
-            $websites = array_merge($websites, $members);
-            ++$page;
-        } while (count($members) >= self::API_PAGE_SIZE && $page <= self::MAX_WEBSITE_PAGES);
-
-        return $websites;
+        return $data;
     }
 
     /**
@@ -122,6 +114,13 @@ class Pricee_API_Service
         $products = $this->lookup_products($bearer, $websiteUuid, 'extId', $productExtId);
         if (empty($products)) {
             $products = $this->lookup_products($bearer, $websiteUuid, 'url', $productUrl);
+
+            // Only a product synced without extId can be adopted by URL:
+            // one with another extId belongs to another shop product
+            $owner = $products[0]['extId'] ?? null;
+            if (null !== $owner && '' !== $owner) {
+                throw new RuntimeException(sprintf('URL %s is already tracked on Pricee for product ID %s', $productUrl, is_scalar($owner) ? (string) $owner : ''));
+            }
         }
 
         if (!empty($products)) {

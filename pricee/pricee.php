@@ -81,7 +81,14 @@ class Pricee_Plugin
     public function register_settings()
     {
         register_setting('pricee_settings_group', 'pricee_client_id');
-        register_setting('pricee_settings_group', 'pricee_api_key');
+        register_setting('pricee_settings_group', 'pricee_api_key', [
+            // The form never shows the saved key: submitted empty, it is kept
+            'sanitize_callback' => static function ($value) {
+                $value = is_string($value) ? trim($value) : '';
+
+                return '' !== $value ? $value : (string) get_option('pricee_api_key', '');
+            },
+        ]);
         register_setting('pricee_settings_group', 'pricee_webhook_enabled');
         register_setting('pricee_settings_group', 'pricee_webhook_secret');
     }
@@ -121,7 +128,12 @@ class Pricee_Plugin
                     <tr>
                         <th scope="row"><?php _e('Clé API', 'pricee'); ?></th>
                         <td>
-                            <input type="password" name="pricee_api_key" value="<?php echo esc_attr(get_option('pricee_api_key')); ?>" />
+                            <?php // The saved key is never written into the page: an empty field keeps it?>
+                            <input type="password" name="pricee_api_key" value="" autocomplete="new-password"
+                                placeholder="<?php echo '' !== (string) get_option('pricee_api_key', '') ? esc_attr__('Clé enregistrée', 'pricee') : ''; ?>" />
+                            <?php if ('' !== (string) get_option('pricee_api_key', '')) { ?>
+                                <p class="description"><?php esc_html_e('Laissez vide pour conserver la clé enregistrée.', 'pricee'); ?></p>
+                            <?php } ?>
                         </td>
                     </tr>
                 </table>
@@ -387,14 +399,14 @@ function pricee_resolve_website_id(Pricee_API_Service $api_service, array $login
 
     $host = static fn (string $url): string => (string) preg_replace('/^www\./', '', strtolower((string) wp_parse_url($url, PHP_URL_HOST)));
 
-    foreach ($api_service->get_websites($login['token']) as $site) {
-        if ($site['@id'] === $login['website'] && $host((string) $site['url']) !== $host($website_url)) {
-            throw new RuntimeException(sprintf(
-                'This API key belongs to the Pricee website %s, not to this shop (%s). Use an API key created from the Integrations page of this shop\'s website on Pricee.',
-                $site['url'],
-                $website_url
-            ));
-        }
+    $site = $api_service->get_website($login['token'], $login['website']);
+    $key_website_url = is_string($site['url'] ?? null) ? $site['url'] : '';
+    if ($host($key_website_url) !== $host($website_url)) {
+        throw new RuntimeException(sprintf(
+            'This API key belongs to the Pricee website %s, not to this shop (%s). Use an API key created from the Integrations page of this shop\'s website on Pricee.',
+            $key_website_url,
+            $website_url
+        ));
     }
 
     return $login['website'];
@@ -479,17 +491,11 @@ function pricee_webhook_handler(WP_REST_Request $request)
         $nonce_keys['pricee_nonce_'.hash('sha256', $productData['nonce'])] = true;
     }
 
-    foreach (array_keys($nonce_keys) as $nonce_key) {
-        if (false !== get_transient($nonce_key)) {
-            return new WP_REST_Response([
-                'success' => false,
-                'message' => 'Replayed webhook payload',
-            ], 401);
-        }
-    }
-
-    foreach (array_keys($nonce_keys) as $nonce_key) {
-        set_transient($nonce_key, 1, 2 * PRICEE_WEBHOOK_MAX_AGE);
+    if (!pricee_consume_nonces(array_keys($nonce_keys))) {
+        return new WP_REST_Response([
+            'success' => false,
+            'message' => 'Replayed webhook payload',
+        ], 401);
     }
 
     // A large call writes many products, each one running the shop's hooks
@@ -512,6 +518,46 @@ function pricee_webhook_handler(WP_REST_Request $request)
         // The outcome of each entry, in payload order
         'results' => $results,
     ], 200);
+}
+
+/**
+ * Consume the nonces of an accepted call: false when one was already used.
+ *
+ * Each nonce is an option row inserted with INSERT IGNORE on the unique
+ * option name, which the database makes atomic: of two calls carrying the
+ * same nonce at the same time, only one gets through. The row holds its
+ * expiry, and expired rows are deleted on the way.
+ *
+ * @param array<int, string> $nonce_keys
+ */
+function pricee_consume_nonces(array $nonce_keys): bool
+{
+    global $wpdb;
+
+    $now = time();
+    $wpdb->query($wpdb->prepare(
+        "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s AND CAST(option_value AS UNSIGNED) <= %d",
+        $wpdb->esc_like('pricee_nonce_').'%',
+        $now
+    ));
+
+    foreach ($nonce_keys as $nonce_key) {
+        // Nonces stored as transients by earlier versions, still within their window
+        if (false !== get_transient($nonce_key)) {
+            return false;
+        }
+
+        $inserted = $wpdb->query($wpdb->prepare(
+            "INSERT IGNORE INTO {$wpdb->options} (option_name, option_value, autoload) VALUES (%s, %s, 'no')",
+            $nonce_key,
+            (string) ($now + 2 * PRICEE_WEBHOOK_MAX_AGE)
+        ));
+        if (1 !== $inserted) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 /**
