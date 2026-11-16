@@ -9,7 +9,7 @@ if (!defined('ABSPATH')) {
 
 class Pricee_API_Service
 {
-    private const BASE_URL = 'https://app.pricee.io/api/v1/';
+    private const DEFAULT_BASE_URL = 'https://app.pricee.io/api/v1/';
 
     /**
      * Log in with the API key. Returns the JWT and the IRI of the website
@@ -21,7 +21,7 @@ class Pricee_API_Service
      */
     public function login(string $clientId, string $apiKey): array
     {
-        $response = wp_remote_post(self::BASE_URL.'login', [
+        $response = wp_remote_post($this->base_url().'login', [
             'headers' => [
                 'Content-Type' => 'application/json',
                 'X-CLIENT-ID' => $clientId,
@@ -58,7 +58,7 @@ class Pricee_API_Service
      */
     public function get_website(string $bearer, string $websiteId): array
     {
-        $response = wp_remote_get(self::BASE_URL.'websites/'.$this->extract_uuid($websiteId), [
+        $response = wp_remote_get($this->base_url().'websites/'.$this->extract_uuid($websiteId), [
             'headers' => [
                 'Accept' => 'application/ld+json',
                 'Authorization' => 'Bearer '.$bearer,
@@ -75,7 +75,8 @@ class Pricee_API_Service
         $data = json_decode($body, true);
 
         if (200 !== $status || !is_array($data)) {
-            throw new RuntimeException('Failed to fetch the website of the API key. Status: '.$status.'. Response: '.$body);
+            // The status as code: a 401 tells a reused token has expired
+            throw new RuntimeException('Failed to fetch the website of the API key. Status: '.$status.'. Response: '.$body, (int) $status);
         }
 
         return $data;
@@ -134,7 +135,7 @@ class Pricee_API_Service
             }
 
             if (!empty($patch)) {
-                $update = wp_remote_request(self::BASE_URL.'website_products/'.$existing['id'], [
+                $update = wp_remote_request($this->base_url().'website_products/'.$existing['id'], [
                     'method' => 'PATCH',
                     'headers' => [
                         'Content-Type' => 'application/merge-patch+json',
@@ -158,7 +159,7 @@ class Pricee_API_Service
         }
 
         // Product does not exist: create it
-        $create = wp_remote_post(self::BASE_URL.'website_products', [
+        $create = wp_remote_post($this->base_url().'website_products', [
             'headers' => [
                 'Content-Type' => 'application/ld+json',
                 'Authorization' => 'Bearer '.$bearer,
@@ -195,7 +196,7 @@ class Pricee_API_Service
             $filterKey => $filterValue,
         ]);
 
-        $response = wp_remote_get(self::BASE_URL.'website_products?'.$query, [
+        $response = wp_remote_get($this->base_url().'website_products?'.$query, [
             'headers' => [
                 'Authorization' => 'Bearer '.$bearer,
             ],
@@ -216,5 +217,17 @@ class Pricee_API_Service
         $data = json_decode($body, true);
 
         return is_array($data) && isset($data['member']) && is_array($data['member']) ? $data['member'] : [];
+    }
+
+    /**
+     * API base URL, overridable with the PRICEE_API_BASE_URL constant (in
+     * wp-config.php) or environment variable, to sync against a local
+     * instance of Pricee or the fake API of the end-to-end tests.
+     */
+    private function base_url(): string
+    {
+        $base_url = defined('PRICEE_API_BASE_URL') ? constant('PRICEE_API_BASE_URL') : getenv('PRICEE_API_BASE_URL');
+
+        return is_string($base_url) && '' !== $base_url ? rtrim($base_url, '/').'/' : self::DEFAULT_BASE_URL;
     }
 }

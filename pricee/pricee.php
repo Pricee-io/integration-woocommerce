@@ -356,9 +356,19 @@ add_action('wp_ajax_pricee_sync_products', function () {
 
     try {
         $api_service = new Pricee_API_Service();
-        $login = $api_service->login($client_id, $api_key);
+        $login = pricee_login($api_service, (string) $client_id, (string) $api_key);
+
+        try {
+            $website_id = pricee_resolve_website_id($api_service, $login, rtrim(home_url('/'), '/'));
+        } catch (RuntimeException $e) {
+            // A reused token refused: log in again, once
+            if (401 !== $e->getCode()) {
+                throw $e;
+            }
+            $login = pricee_login($api_service, (string) $client_id, (string) $api_key, true);
+            $website_id = pricee_resolve_website_id($api_service, $login, rtrim(home_url('/'), '/'));
+        }
         $bearer = $login['token'];
-        $website_id = pricee_resolve_website_id($api_service, $login, rtrim(home_url('/'), '/'));
 
         foreach ($batch_ids as $product_id) {
             try {
@@ -381,6 +391,30 @@ add_action('wp_ajax_pricee_sync_products', function () {
         wp_send_json_error(['message' => $e->getMessage()]);
     }
 });
+
+/**
+ * Log in to Pricee, reusing the token of a previous batch: Pricee allows few
+ * logins per minute, and a token lasts an hour, so a large sync logs in once
+ * instead of once per batch. Kept 45 minutes, per API key.
+ *
+ * @return array{token: string, website: ?string}
+ *
+ * @throws Exception
+ */
+function pricee_login(Pricee_API_Service $api_service, string $client_id, string $api_key, bool $fresh = false): array
+{
+    $cache_key = 'pricee_login_'.hash('sha256', $client_id.'|'.$api_key);
+
+    $cached = $fresh ? false : get_transient($cache_key);
+    if (is_array($cached) && is_string($cached['token'] ?? null)) {
+        return ['token' => $cached['token'], 'website' => is_string($cached['website'] ?? null) ? $cached['website'] : null];
+    }
+
+    $login = $api_service->login($client_id, $api_key);
+    set_transient($cache_key, $login, 45 * MINUTE_IN_SECONDS);
+
+    return $login;
+}
 
 /**
  * The Pricee website to sync to: the one the API key is scoped to, which

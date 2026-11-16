@@ -20,8 +20,9 @@ function pricee_uninstall_site(): void
     $wpdb->query($wpdb->prepare(
         "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s OR option_name LIKE %s",
         $wpdb->esc_like('pricee_nonce_').'%',
-        $wpdb->esc_like('_transient_pricee_nonce_').'%',
-        $wpdb->esc_like('_transient_timeout_pricee_nonce_').'%'
+        // Nonces of earlier versions and the reused login tokens
+        $wpdb->esc_like('_transient_pricee_').'%',
+        $wpdb->esc_like('_transient_timeout_pricee_').'%'
     ));
 }
 
