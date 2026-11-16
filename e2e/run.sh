@@ -20,7 +20,7 @@ set -euo pipefail
 WP_TAG="${1:-php8.3-apache}"
 WC_VERSION="${2:-}"
 PORT="${E2E_PORT:-8083}"
-FROM_REF="${E2E_FROM_REF:-1.7.1}"
+FROM_REF="${E2E_FROM_REF:-1.8.0}"
 # Same version as the playwright package in e2e/package.json
 PLAYWRIGHT_IMAGE="mcr.microsoft.com/playwright:v1.49.1-noble"
 
