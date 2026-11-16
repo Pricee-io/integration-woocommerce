@@ -434,10 +434,12 @@ function pricee_webhook_handler(WP_REST_Request $request)
     // Replay protection: each entry must carry a fresh signed timestamp
     // and a nonce that has not been used within the accepted window.
     // The app signs a whole batch with a single nonce, so each distinct
-    // nonce is consumed only once per payload.
-    $seen_nonces = [];
+    // nonce is consumed only once per payload, and only once the whole
+    // call is accepted: a refused call must not use up its nonce.
+    $nonce_keys = [];
     foreach ($data as $productData) {
-        if (!isset($productData['timestamp'])
+        if (!is_array($productData)
+            || !isset($productData['timestamp'])
             || !is_numeric($productData['timestamp'])
             || !isset($productData['nonce'])
             || !is_string($productData['nonce'])
@@ -455,18 +457,19 @@ function pricee_webhook_handler(WP_REST_Request $request)
             ], 401);
         }
 
-        $nonce_key = 'pricee_nonce_'.hash('sha256', $productData['nonce']);
-        if (isset($seen_nonces[$nonce_key])) {
-            continue;
-        }
-        $seen_nonces[$nonce_key] = true;
+        $nonce_keys['pricee_nonce_'.hash('sha256', $productData['nonce'])] = true;
+    }
 
+    foreach (array_keys($nonce_keys) as $nonce_key) {
         if (false !== get_transient($nonce_key)) {
             return new WP_REST_Response([
                 'success' => false,
                 'message' => 'Replayed webhook payload',
             ], 401);
         }
+    }
+
+    foreach (array_keys($nonce_keys) as $nonce_key) {
         set_transient($nonce_key, 1, 2 * PRICEE_WEBHOOK_MAX_AGE);
     }
 
