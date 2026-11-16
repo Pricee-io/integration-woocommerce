@@ -1,5 +1,7 @@
 <?php
 
+use Automattic\WooCommerce\Utilities\FeaturesUtil;
+
 /*
  * Plugin Name: Pricee
  * Description: Pricee integration with WooCommerce
@@ -28,6 +30,15 @@ define('PRICEE_WEBHOOK_MAX_AGE', 300);
 define('PRICEE_SYNC_BATCH_SIZE', 50);
 
 require_once PRICEE_PLUGIN_DIR.'includes/class-pricee-api-service.php';
+
+// The plugin never reads or writes orders: compatible with the order storage
+// (HPOS) and the cart and checkout blocks
+add_action('before_woocommerce_init', function () {
+    if (class_exists(FeaturesUtil::class)) {
+        FeaturesUtil::declare_compatibility('custom_order_tables', __FILE__, true);
+        FeaturesUtil::declare_compatibility('cart_checkout_blocks', __FILE__, true);
+    }
+});
 
 class Pricee_Plugin
 {
@@ -88,8 +99,9 @@ class Pricee_Plugin
     {
         $webhook_enabled = get_option('pricee_webhook_enabled', 'no');
         $webhook_secret = get_option('pricee_webhook_secret', '');
-        $site_url = get_site_url();
-        $webhook_url = esc_url($site_url.'/wp-json/pricee/v1/webhook');
+        // The REST URL WordPress really serves: right with plain permalinks
+        // (?rest_route=) and with WordPress installed in a subfolder
+        $webhook_url = esc_url(rest_url('pricee/v1/webhook'));
         ?>
         <div class="wrap">
             <h1><?php esc_html_e('Pricee.io - Configuration', 'pricee'); ?></h1>
@@ -175,7 +187,14 @@ function pricee_sync_page_callback()
 
             <div style="margin: 20px 0">
                 <?php foreach ($categories as $category) {
-                    $product_count = wc_get_products(['category' => [$category->slug], 'limit' => -1]);
+                    // The products a sync of this category takes: published ones only, counted without loading them
+                    $product_count = wc_get_products([
+                        'product_category_id' => [$category->term_id],
+                        'status' => 'publish',
+                        'limit' => 1,
+                        'return' => 'ids',
+                        'paginate' => true,
+                    ])->total;
                     ?>
                     <div class="form-check">
                         <input class="form-check-input" type="checkbox"
@@ -183,7 +202,7 @@ function pricee_sync_page_callback()
                             value="<?php echo esc_attr((string) $category->term_id); ?>"
                             id="category-<?php echo esc_attr((string) $category->term_id); ?>">
                         <label class="form-check-label" for="category-<?php echo esc_attr((string) $category->term_id); ?>">
-                            <?php echo esc_html($category->name); ?> (<?php echo count($product_count); ?>)
+                            <?php echo esc_html($category->name); ?> (<?php echo (int) $product_count; ?>)
                         </label>
                     </div>
                 <?php } ?>
