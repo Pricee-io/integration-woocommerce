@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.1] - 2026-11-16
+
+- A price update from Pricee that was refused can now be retried
+- The webhook URL shown in the settings works with every permalink setting and with WordPress installed in a subfolder
+- The category counts on the sync page only count the published products the sync sends, and load faster on large catalogs
+- No more incompatibility warning with WooCommerce's order storage (HPOS) and the cart and checkout blocks
+
 ## [1.7.0] - 2026-11-15
 
 - Products are synced to the Pricee website your API key belongs to: create the API key from the Integrations page of your shop's website on Pricee
