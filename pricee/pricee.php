@@ -112,6 +112,11 @@ class Pricee_Plugin
         ?>
         <div class="wrap">
             <h1><?php esc_html_e('Pricee.io - Configuration', 'pricee'); ?></h1>
+            <?php
+            // WordPress shows the "Settings saved." notice on its own Settings
+            // pages only: a top-level plugin page displays it itself
+            settings_errors();
+        ?>
             <form method="post" action="options.php">
                 <?php
                 settings_fields('pricee_settings_group');
