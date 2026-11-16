@@ -31,3 +31,7 @@ package:
 	docker compose run --rm --user $(id -u):$(id -g) dev bash -c "cd /app/pricee"
 	rm -f pricee.zip
 	zip -r pricee.zip pricee
+
+# End-to-end tests in a throwaway shop of their own (see e2e/run.sh)
+e2e:
+	e2e/run.sh

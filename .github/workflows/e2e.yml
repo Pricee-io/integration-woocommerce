@@ -1,0 +1,39 @@
+name: End-to-end
+
+# The plugin in a real, throwaway WordPress + WooCommerce: upgrade from the
+# last release, signed webhook calls over HTTP, settings and a sync run from
+# the admin in a browser against a fake Pricee API, then deletion
+# (see e2e/run.sh). On the lowest supported PHP and on a recent one.
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  e2e:
+    name: WordPress ${{ matrix.wordpress }} - upgrade, webhook and sync
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        wordpress: ['php8.2-apache', 'php8.4-apache']
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          # The upgrade test installs the last release from its tag
+          fetch-depth: 0
+
+      - name: Run the end-to-end tests
+        run: e2e/run.sh '${{ matrix.wordpress }}'
+
+      - name: Upload the failure screenshot
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-failure-${{ matrix.wordpress }}
+          path: e2e/output/
+          if-no-files-found: ignore
