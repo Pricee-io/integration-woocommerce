@@ -498,7 +498,8 @@ function pricee_webhook_handler(WP_REST_Request $request)
     $results = [];
     $outcomes = [];
     foreach ($data as $productData) {
-        $outcome = pricee_apply_webhook_entry(is_array($productData) ? $productData : []);
+        // The replay checks above refused the call if any entry was not an array
+        $outcome = pricee_apply_webhook_entry($productData);
         $results[] = $outcome;
         $outcomes[$outcome] = ($outcomes[$outcome] ?? 0) + 1;
     }
