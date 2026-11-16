@@ -578,12 +578,14 @@ function pricee_apply_webhook_entry(array $productData): string
     if ($storedPrice <= 0 || $displayedPrice <= 0) {
         return pricee_skip_entry('skipped_invalid_price', 'no current price to compare with', $productData);
     }
-    if (abs(round($displayedPrice, $decimals) - round((float) $readPrice, $decimals)) >= 0.000001) {
-        return pricee_skip_entry('skipped_price_changed_in_shop', 'the shop price '.$displayedPrice.' is no longer the one Pricee read ('.$readPrice.')', $productData);
-    }
-
+    // Checked first: a retried call whose first attempt was applied finds the
+    // price already set, not changed in the shop
     if (abs(round($displayedPrice, $decimals) - round((float) $rawPrice, $decimals)) < 0.000001) {
         return 'unchanged';
+    }
+
+    if (abs(round($displayedPrice, $decimals) - round((float) $readPrice, $decimals)) >= 0.000001) {
+        return pricee_skip_entry('skipped_price_changed_in_shop', 'the shop price '.$displayedPrice.' is no longer the one Pricee read ('.$readPrice.')', $productData);
     }
 
     // The received price is the displayed one: stored with the same ratio as
