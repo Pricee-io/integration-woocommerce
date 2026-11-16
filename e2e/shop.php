@@ -158,6 +158,8 @@ function webhook(): void
     assertSame(200, $status, 'signed call accepted ('.json_encode($answer).')');
     assertSame(['updated_price', 'skipped_promotion', 'skipped_price_changed_in_shop'], $answer['results'] ?? null, 'answer gives each entry its outcome, in order');
     assertSame(['updated_price' => 1, 'skipped_promotion' => 1, 'skipped_price_changed_in_shop' => 1], $answer['outcomes'] ?? null, 'answer counts each outcome');
+    $plugin = ['platform' => 'woocommerce', 'version' => PRICEE_VERSION];
+    assertSame($plugin + ['platform_version' => WC_VERSION, 'runtime' => 'php', 'runtime_version' => PHP_VERSION], $answer['plugin'] ?? null, 'answer gives the plugin, WooCommerce version and runtime');
     assertSame(8.0, storedPrice($simple), 'simple product price written');
     assertSame(10.0, storedPrice($onSale), 'product on sale left untouched');
     assertSame(10.0, storedPrice($changed), 'price changed in the shop since Pricee read it left untouched');
@@ -165,8 +167,9 @@ function webhook(): void
     [$status] = sendWebhook([], null, $body);
     assertSame(401, $status, 'replayed call refused');
 
-    [$status] = sendWebhook([entry($simple, 5.0)], 'wrong-secret');
+    [$status, $answer] = sendWebhook([entry($simple, 5.0)], 'wrong-secret');
     assertSame(401, $status, 'call with a wrong signature refused');
+    assertSame($plugin, $answer['plugin'] ?? null, 'refused call gives the plugin and its version only');
     assertSame(8.0, storedPrice($simple), 'refused calls write nothing');
 
     // A call refused for one stale entry does not use up its nonce: once fixed, it gets through

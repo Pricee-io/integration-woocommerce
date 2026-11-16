@@ -467,7 +467,7 @@ function pricee_webhook_handler(WP_REST_Request $request)
     $body = $request->get_body();
     $signature = $request->get_header('x-signature');
     if (empty($body) || empty($signature)) {
-        return new WP_REST_Response([
+        return pricee_webhook_response([
             'success' => false,
             'message' => 'Missing informations for webhook',
         ], 400);
@@ -477,7 +477,7 @@ function pricee_webhook_handler(WP_REST_Request $request)
     $enabled = get_option('pricee_webhook_enabled', '');
     $secret = get_option('pricee_webhook_secret', '');
     if (!$enabled || empty($secret)) {
-        return new WP_REST_Response([
+        return pricee_webhook_response([
             'success' => false,
             'message' => 'Webhook not configured',
         ], 401);
@@ -486,7 +486,7 @@ function pricee_webhook_handler(WP_REST_Request $request)
     // Verify signature
     $expected_signature = hash_hmac('sha256', $body, $secret);
     if (!hash_equals($expected_signature, $signature)) {
-        return new WP_REST_Response([
+        return pricee_webhook_response([
             'success' => false,
             'message' => 'Invalid signature',
         ], 401);
@@ -495,7 +495,7 @@ function pricee_webhook_handler(WP_REST_Request $request)
     // Get JSON
     $data = json_decode($body, true);
     if (!is_array($data)) {
-        return new WP_REST_Response([
+        return pricee_webhook_response([
             'success' => false,
             'message' => 'Invalid JSON payload',
         ], 400);
@@ -514,14 +514,14 @@ function pricee_webhook_handler(WP_REST_Request $request)
             || !isset($productData['nonce'])
             || !is_string($productData['nonce'])
             || '' === $productData['nonce']) {
-            return new WP_REST_Response([
+            return pricee_webhook_response([
                 'success' => false,
                 'message' => 'Missing timestamp or nonce',
             ], 401);
         }
 
         if (abs(time() - (int) $productData['timestamp']) > PRICEE_WEBHOOK_MAX_AGE) {
-            return new WP_REST_Response([
+            return pricee_webhook_response([
                 'success' => false,
                 'message' => 'Expired webhook payload',
             ], 401);
@@ -531,7 +531,7 @@ function pricee_webhook_handler(WP_REST_Request $request)
     }
 
     if (!pricee_consume_nonces(array_keys($nonce_keys))) {
-        return new WP_REST_Response([
+        return pricee_webhook_response([
             'success' => false,
             'message' => 'Replayed webhook payload',
         ], 401);
@@ -549,14 +549,34 @@ function pricee_webhook_handler(WP_REST_Request $request)
         $outcomes[$outcome] = ($outcomes[$outcome] ?? 0) + 1;
     }
 
-    return new WP_REST_Response([
+    return pricee_webhook_response([
         'success' => true,
         'message' => 'Webhook received and validated',
         // How many entries were updated, unchanged or skipped, and why
         'outcomes' => $outcomes,
         // The outcome of each entry, in payload order
         'results' => $results,
-    ], 200);
+    ], 200, true);
+}
+
+/**
+ * A webhook answer, which always says which plugin and version answered,
+ * refused calls included: Pricee shows it in its webhook history.
+ * An accepted call's answer also gives the WooCommerce version and the runtime.
+ *
+ * @param array<string, mixed> $answer
+ */
+function pricee_webhook_response(array $answer, int $status, bool $accepted = false): WP_REST_Response
+{
+    $answer['plugin'] = ['platform' => 'woocommerce', 'version' => PRICEE_VERSION];
+    // The WooCommerce version and the runtime (PHP) only to a call signed by Pricee: anyone can read a refused call's answer
+    if ($accepted) {
+        $answer['plugin']['platform_version'] = defined('WC_VERSION') ? WC_VERSION : null;
+        $answer['plugin']['runtime'] = 'php';
+        $answer['plugin']['runtime_version'] = PHP_VERSION;
+    }
+
+    return new WP_REST_Response($answer, $status);
 }
 
 /**
