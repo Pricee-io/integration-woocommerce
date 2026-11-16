@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] - 2026-11-16
+
+- The settings page shows a confirmation when the settings are saved
+- The saved API key is no longer shown in the settings page: leave the field empty to keep it
+- Deleting the plugin removes its settings, among them the API key and the webhook secret
+- Large catalogs sync to the end: the sync no longer logs in to Pricee for each batch of products, which Pricee limits
+- A product never takes over on Pricee another product's tracking, when it gets the URL another product had
+- A price update from Pricee retried after a slow answer is now reported as unchanged instead of skipped
+- Two identical price updates arriving at the same time are applied only once
+- The check that the API key belongs to this shop's website works however many websites your Pricee account has
+
 ## [1.7.1] - 2026-11-16
 
 - A price update from Pricee that was refused can now be retried
